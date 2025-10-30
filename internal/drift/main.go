@@ -21,13 +21,19 @@ type Result struct {
 	Runner         plan.RunnerKind
 }
 
+// Test hooks (overridable in tests)
+var (
+	SelectRunner = plan.SelectRunner
+	PlanJSON     = plan.MakeRefreshOnlyPlanJSON
+)
+
 func CheckDrift(ctx context.Context, opts Options) (Result, error) {
-	runner, err := plan.SelectRunner()
+	runner, err := SelectRunner()
 	if err != nil {
 		return Result{}, err
 	}
 
-	planJSON, err := plan.MakeRefreshOnlyPlanJSON(ctx, runner, opts.Path)
+	planJSON, err := PlanJSON(ctx, runner, opts.Path)
 	if err != nil {
 		return Result{}, err
 	}
