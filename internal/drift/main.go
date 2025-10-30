@@ -10,7 +10,7 @@ import (
 
 type Options struct {
 	Path   string // working dir
-	Format string // "md" | "text"
+	Format string // "md" | "text" | "json"
 	Strict bool
 }
 
@@ -43,8 +43,13 @@ func CheckDrift(ctx context.Context, opts Options) (Result, error) {
 		rendered = report.RenderMarkdown(stats, runner)
 	case "text", "txt":
 		rendered = report.RenderText(stats, runner)
+	case "json":
+		rendered, err = report.RenderJSON(stats)
+		if err != nil {
+			return Result{}, fmt.Errorf("failed to render json: %w", err)
+		}
 	default:
-		return Result{}, fmt.Errorf("unsupported format %q (use md|text)", opts.Format)
+		return Result{}, fmt.Errorf("unsupported format %q (use md|text|json)", opts.Format)
 	}
 
 	return Result{

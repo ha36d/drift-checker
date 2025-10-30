@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -34,6 +35,7 @@ func RenderText(s plan.Stats, runner plan.RunnerKind) string {
 	fmt.Fprintf(&b, "Replaces: %d\n", s.Replaces)
 	fmt.Fprintf(&b, "Deletes: %d\n", s.Deletes)
 	fmt.Fprintf(&b, "Total changed resources: %d\n", len(s.DriftedResources))
+
 	if len(s.DriftedResources) > 0 {
 		b.WriteString("\nDrifted Resources:\n")
 		for _, addr := range s.DriftedResources {
@@ -43,4 +45,29 @@ func RenderText(s plan.Stats, runner plan.RunnerKind) string {
 		b.WriteString("\nNo drift detected.\n")
 	}
 	return b.String()
+}
+
+// RenderJSON outputs the minimal, machine-readable summary.
+// Fields mirror Markdown/Text modes (total == number of drifted resources).
+// No extra data is included.
+func RenderJSON(s plan.Stats) (string, error) {
+	payload := struct {
+		Updates  int      `json:"updates"`
+		Replaces int      `json:"replaces"`
+		Deletes  int      `json:"deletes"`
+		Drifted  []string `json:"drifted"`
+		Total    int      `json:"total"`
+	}{
+		Updates:  s.Updates,
+		Replaces: s.Replaces,
+		Deletes:  s.Deletes,
+		Drifted:  s.DriftedResources,
+		Total:    len(s.DriftedResources),
+	}
+
+	b, err := json.Marshal(payload) // compact valid JSON (no extra whitespace)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
