@@ -3,11 +3,11 @@
 A CLI tool for drift detection and destructive-change gating in Terraform/OpenTofu plans.
 
 ## Features
-
 - Detects drift using **refresh-only** plans (OpenTofu preferred, Terraform fallback)
 - Parses plan JSON and counts **updates / deletes / replaces**
-- Outputs **Markdown** (default), **text**, or **json** summary (counts + drifted resources)
+- Outputs **Markdown** (default), **text**, or **json** summary (counts + resource addresses)
 - Flags: `--path` (default `.`), `--format md|text|json` (default `md`), `--strict` (exit code 2 if drift detected)
+- **Gate** subcommand to enforce **destructive-change policy** (delete/replace) for normal plan JSON
 - Works with only Terraform **or** only OpenTofu installed
 - CI-ready with strict exit codes
 
@@ -18,7 +18,6 @@ A CLI tool for drift detection and destructive-change gating in Terraform/OpenTo
 > Copy-paste friendly. Replace `.` with your IaC directory if needed.
 
 ### 1) Install / Build
-
 ```bash
 # With Go installed (Go 1.22+):
 go install github.com/ha36d/drift-checker@latest
@@ -37,6 +36,7 @@ tofu init || terraform init
 ### 3) Create a refresh-only plan (optional but useful for verification)
 
 You don’t need to run this manually for `drift-checker` to work—`drift-checker` generates and reads a plan internally.
+
 If you want to sanity-check your runner first:
 
 ```bash
@@ -68,55 +68,59 @@ drift-checker scan --path . --format json
 
 ---
 
-### Sample Markdown output
+## NEW: Destructive-change Gate (normal plan JSON)
 
-#### Clean (no drift)
+Use `gate` to enforce a policy on **destructive actions** (deletes/replaces) from a standard plan JSON (output of `show -json`, *not* refresh-only).
 
-```markdown
-## Drift Summary (tofu)
+### Typical usage
 
-- **Updates**: 0
-- **Replaces**: 0
-- **Deletes**: 0
-- **Total changed resources**: 0
+```bash
+# Fail CI if any delete/replace appears
+drift-checker gate --input plan.json --strict
 
-_No drift detected._
+# Fail if deletes or replaces exceed thresholds
+drift-checker gate --input plan.json --strict --max-deletes 0 --max-replaces 0
+
+# Output formats: md|text|json; include a list of destructive addresses
+drift-checker gate --input plan.json --format json --list
 ```
-
-#### Drift detected (example)
-
-```markdown
-## Drift Summary (terraform)
-
-- **Updates**: 1
-- **Replaces**: 1
-- **Deletes**: 0
-- **Total changed resources**: 2
-
-### Drifted Resources
-
-- `module.vpc.aws_subnet.public[0]`
-- `aws_iam_role.app`
-```
-
-> Notes:
->
-> * Runner label will be `tofu` or `terraform` depending on what’s found in `PATH`.
-> * The list shows resource addresses with detected drift.
-
----
 
 ### Exit code behavior
 
-`drift-checker scan` uses standard shell exit codes so you can gate CI jobs.
+`drift-checker gate` uses standard shell exit codes so you can gate CI jobs.
 
-| Scenario                                     | `--strict` absent | `--strict` present |
-| -------------------------------------------- | ----------------- | ------------------ |
-| No drift detected                            | `0`               | `0`                |
-| Drift detected                               | `0`               | `2`                |
-| Any other error (timeouts, bad config, etc.) | `1`               | `1`                |
+| Scenario                                                    | Exit code |
+| ----------------------------------------------------------- | --------- |
+| Safe (no destructive and thresholds not exceeded)           | `0`       |
+| Destructive present **or** thresholds exceeded (`--strict`) | `2`       |
+| Any other error (I/O, invalid JSON, etc.)                   | `1`       |
 
-> Tip: Use `--strict` in CI to fail the job on drift: exit code `2` clearly distinguishes drift from other errors.
+> Tip: Use `--strict` in CI to fail the job on destructive changes: exit code `2` clearly distinguishes policy violations from other errors.
+
+### JSON schema (gate output on stdout)
+
+```json
+{
+  "updates": 0,
+  "replaces": 0,
+  "deletes": 0,
+  "destructive_total": 0,
+  "destructive": ["module.db.aws_db_instance.main"],
+  "total": 0
+}
+```
+
+* `destructive` is included only with `--list`.
+* `destructive_total` = `replaces + deletes`.
+* `total` equals the count of all changed resource addresses in the plan JSON (updates + deletes + replaces).
+
+### What counts as *destructive*?
+
+We look at `resource_changes[*].change.actions`:
+
+* `["delete"]` → **destructive**
+* `["create","delete"]` or `["delete","create"]` → **replace** → **destructive**
+* `["update"]` → **non-destructive**
 
 ---
 
@@ -126,80 +130,41 @@ _No drift detected._
 # In your IaC directory
 tofu init || terraform init
 
-# Run scan (Markdown output by default)
+# Drift detection
 drift-checker scan --path . --strict
 
-# Plain text output
-drift-checker scan --path . --format text
-
-# Machine-readable JSON output (stdout is **only** the JSON)
-drift-checker scan --path . --format json
+# Gate using a normal plan JSON you've already generated
+terraform show -json drift-checker.plan > plan.json
+drift-checker gate --input plan.json --strict --format md --list
 ```
-
-### JSON schema (output on stdout)
-
-```json
-{
-  "updates":  0,
-  "replaces": 0,
-  "deletes":  0,
-  "drifted":  ["module.vpc.aws_subnet.public[0]"],
-  "total":    1
-}
-```
-
-### What counts as drift?
-
-We look at `resource_changes[*].change.actions` from the plan JSON (`show -json`):
-
-* `["update"]` → **update**
-* `["delete"]` → **delete**
-* `["create","delete"]` (any order) → **replace**
-
-Any of the above increments drift counts and lists the resource address.
-
-### Exit codes
-
-* `0` – No drift detected
-* `2` – Drift detected **and** `--strict` used
-* `1` – Other error
-
----
 
 ## Implementation Notes
 
-* Prefers `tofu`, falls back to `terraform`
-* Uses reliable two-step JSON flow:
-
-  1. `<runner> plan -refresh-only -out=drift-checker.plan`
-  2. `<runner> show -json drift-checker.plan`
-* No dependency on streaming `plan -json` support.
-* All logs are written to **stderr**; **stdout** is reserved for the report (Markdown/Text/JSON).
+* `scan` prefers `tofu`, falls back to `terraform`, and uses a reliable two-step JSON flow.
+* `gate` **does not** run a plan: it reads a **provided** plan JSON (normal `show -json` file).
+* All logs are written to **stderr**; **stdout** is reserved for the user-selected output (Markdown/Text/JSON).
 
 ## Project Structure
 
 * `cmd/` – CLI commands (Cobra)
+
+  * `scan.go` – refresh-only scan
+  * `gate.go` – destructive-change policy gate
 * `internal/plan/` – Runner selection, plan execution, and JSON parsing
-* `internal/report/` – Output formatting
-* `internal/drift/` – Orchestration
+* `internal/report/` – Output formatting for scan summaries
+* `internal/drift/` – Orchestration for scan
 
 ## License
 
 Apache-2.0
 
----
-
-### Notes / Next steps
-
-1. Add unit tests with `testdata/*.json` plans.
-2. Optionally support streaming `plan -json` when available.
-3. Consider per-module/type breakdowns.
-
 ```
 
-**Notes on behavior**
+These tests reuse your existing fixtures and patterns:
 
-- `--format json` prints **only** the JSON object to stdout.  
-- All logs (info/warn/error) are explicitly sent to **stderr** via `log.SetOutput(os.Stderr)` in `cmd/root.go`.  
-- JSON fields: `updates`, `replaces`, `deletes`, `drifted` (list of resource addresses), `total` (length of `drifted`). Matches the semantics of Markdown/Text modes’ “Total changed resources”.
+- `plan_drift.json` (has 1 update, 1 delete, 1 replace) → triggers exit code `2` in strict mode.
+- New `plan_updates_only.json` → safe (exit `0` even with `--strict`).
+- Threshold test sets `--max-deletes 0 --max-replaces 0` to trip exit `2`.
+
+You can run them with your current CI (`go test -v ./...`).
 ```
