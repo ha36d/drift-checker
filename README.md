@@ -154,11 +154,7 @@ drift-checker gate --input plan.json --strict --format md --list
 * `internal/report/` – Output formatting for scan summaries
 * `internal/drift/` – Orchestration for scan
 
-## License
-
-Apache-2.0
-
-```
+## Tests
 
 These tests reuse your existing fixtures and patterns:
 
@@ -167,4 +163,7 @@ These tests reuse your existing fixtures and patterns:
 - Threshold test sets `--max-deletes 0 --max-replaces 0` to trip exit `2`.
 
 You can run them with your current CI (`go test -v ./...`).
-```
+
+## License
+
+Apache-2.0
