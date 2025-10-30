@@ -15,30 +15,40 @@ import (
 
 var (
 	timeout     time.Duration
-	forceUpdate bool
+	forceUpdate bool // kept (unused) to avoid breaking previous flags
+	pathFlag    string
+	formatFlag  string
+	strictFlag  bool
 )
 
 // scanCmd represents the infrastructure scan command
 var scanCmd = &cobra.Command{
 	Use:   "scan",
-	Short: "Scan for the drifts in infrastructure",
-	Long: `Scan the for the drifts in infrastructure.
-This command will check for the drifts.`,
+	Short: "Scan for drift in Terraform/OpenTofu state via refresh-only plan",
+	Long: `Runs a refresh-only plan using OpenTofu (preferred) or Terraform, parses the JSON plan,
+and reports counts of updates / deletes / replaces, plus the list of drifted resources.
+
+Exit status:
+  0 = no drift
+  2 = drift detected (when --strict is set)
+  1 = other error`,
 	Example: `  drift-checker scan
-  drift-checker scan --timeout 30m
-  drift-checker scan --force`,
-	RunE: runBuild,
+  drift-checker scan --path . --format md --strict
+  drift-checker scan --timeout 30m`,
+	RunE: runScan,
 }
 
 func init() {
 	rootCmd.AddCommand(scanCmd)
 
-	// Add build-specific flags
 	scanCmd.Flags().DurationVar(&timeout, "timeout", 2*time.Hour, "timeout for the scan operation")
-	scanCmd.Flags().BoolVar(&forceUpdate, "force", false, "force update even if no changes detected")
+	scanCmd.Flags().BoolVar(&forceUpdate, "force", false, "deprecated: no-op (kept for compatibility)")
+	scanCmd.Flags().StringVar(&pathFlag, "path", ".", "working directory containing the Terraform/OpenTofu configuration")
+	scanCmd.Flags().StringVar(&formatFlag, "format", "md", "output format: md|text")
+	scanCmd.Flags().BoolVar(&strictFlag, "strict", false, "exit with code 2 if drift is detected")
 }
 
-func runBuild(cmd *cobra.Command, args []string) error {
+func runScan(cmd *cobra.Command, args []string) error {
 	// Create cancellable context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -52,19 +62,18 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	// Validate configuration before proceeding
-	if err := validateBuildConfig(); err != nil {
-		return fmt.Errorf("configuration validation failed: %w", err)
-	}
+	log.WithFields(log.Fields{
+		"path":    pathFlag,
+		"format":  formatFlag,
+		"strict":  strictFlag,
+		"timeout": timeout,
+	}).Info("Scan parameters")
 
-	// Log scan parameters
-	logBuildParameters()
-
-	// Execute the build
-	log.Info("Starting infrastructure build...")
-	startTime := time.Now()
-
-	err := drift.CheckDrift(ctx)
+	res, err := drift.CheckDrift(ctx, drift.Options{
+		Path:   pathFlag,
+		Format: formatFlag,
+		Strict: strictFlag,
+	})
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("scan operation timed out after %v", timeout)
@@ -72,22 +81,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 
-	// Log success and duration
-	duration := time.Since(startTime)
-	log.WithFields(log.Fields{
-		"duration": duration.Round(time.Second),
-	}).Info("Infrastructure scan completed successfully")
+	// Print report
+	fmt.Println(res.RenderedReport)
+
+	// Strict mode: exit 2 if drift
+	if strictFlag && res.DriftDetected {
+		// Using os.Exit(2) to conform to required contract
+		os.Exit(2)
+	}
 
 	return nil
-}
-
-func validateBuildConfig() error {
-	return nil
-}
-
-func logBuildParameters() {
-	log.WithFields(log.Fields{
-		"timeout": timeout,
-		"force":   forceUpdate,
-	}).Info("Build parameters")
 }

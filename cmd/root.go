@@ -30,7 +30,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "drift-checker",
 	Short: "Cloud infrastructure drift checker",
-	Long: `drift-checker is a IaC tool built to check the drints in cloud infrastructure,
+	Long: `drift-checker is an IaC tool built to check drifts in cloud infrastructure,
 supporting Terraform and OpenTofu.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		setupLogging()
@@ -46,10 +46,8 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is .config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
-
 	must(viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose")))
 	viper.SetDefault("verbose", false)
 }
@@ -75,13 +73,10 @@ func initConfig() {
 	} else {
 		setupDefaultConfigPaths()
 	}
-
 	viper.AutomaticEnv()
-
 	if err := loadAndValidateConfig(); err != nil {
 		log.Fatalf("Configuration error: %v", err)
 	}
-
 	if verbose {
 		logConfiguration()
 	}
@@ -92,7 +87,6 @@ func setupDefaultConfigPaths() {
 	if err != nil {
 		log.Fatalf("Error getting home directory: %v", err)
 	}
-
 	viper.AddConfigPath(".")
 	viper.AddConfigPath(home)
 	viper.SetConfigType("yaml")
@@ -106,15 +100,12 @@ func loadAndValidateConfig() error {
 		}
 		log.Warn("No config file found! Using flags and environment variables")
 	}
-
 	if err := validateConfigSchema(); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
-
 	if err := viper.Unmarshal(&config); err != nil {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
-
 	return nil
 }
 
@@ -122,17 +113,16 @@ func validateConfigSchema() error {
 	schemaPath := filepath.Join(".", "config_schema.json")
 	schemaFile, err := os.ReadFile(schemaPath)
 	if err != nil {
-		return fmt.Errorf("error reading schema file: %w", err)
+		// Schema is optional; only validate if present
+		log.Debug("No config_schema.json found, skipping schema validation")
+		return nil
 	}
-
 	schemaLoader := gojsonschema.NewStringLoader(string(schemaFile))
 	documentLoader := gojsonschema.NewGoLoader(viper.AllSettings())
-
 	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
 	if err != nil {
 		return fmt.Errorf("schema validation error: %w", err)
 	}
-
 	if !result.Valid() {
 		var errors []string
 		for _, desc := range result.Errors() {
@@ -140,7 +130,6 @@ func validateConfigSchema() error {
 		}
 		return fmt.Errorf("invalid configuration: %v", errors)
 	}
-
 	return nil
 }
 
