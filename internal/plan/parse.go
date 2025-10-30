@@ -30,6 +30,11 @@ type Stats struct {
 	TotalResources   int
 }
 
+// DriftCount returns the total number of drifted changes as the sum of Updates, Replaces, and Deletes.
+func DriftCount(s Stats) int {
+	return s.Updates + s.Replaces + s.Deletes
+}
+
 // ParseStats extracts counts from Terraform/OpenTofu plan JSON (from `show -json`).
 func ParseStats(planJSON []byte) (Stats, error) {
 	var p tfPlan
@@ -46,7 +51,6 @@ func ParseStats(planJSON []byte) (Stats, error) {
 		if len(acts) == 0 {
 			continue
 		}
-
 		// Recognize actions:
 		// - ["update"]
 		// - ["delete"]

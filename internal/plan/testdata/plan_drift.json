@@ -1,0 +1,25 @@
+{
+  "resource_changes": [
+    {
+      "address": "aws_instance.web",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "change": { "actions": ["update"] }
+    },
+    {
+      "address": "aws_s3_bucket.logs",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "logs",
+      "change": { "actions": ["delete"] }
+    },
+    {
+      "address": "module.db.aws_db_instance.main",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "main",
+      "change": { "actions": ["create", "delete"] }
+    }
+  ]
+}
