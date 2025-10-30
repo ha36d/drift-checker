@@ -46,6 +46,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is .config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
 	must(viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose")))
@@ -53,6 +54,9 @@ func init() {
 }
 
 func setupLogging() {
+	// Ensure ALL logs go to stderr (requirement: no extra logs on stdout)
+	log.SetOutput(os.Stderr)
+
 	if verbose {
 		log.SetLevel(log.DebugLevel)
 		log.SetFormatter(&log.TextFormatter{
@@ -73,10 +77,13 @@ func initConfig() {
 	} else {
 		setupDefaultConfigPaths()
 	}
+
 	viper.AutomaticEnv()
+
 	if err := loadAndValidateConfig(); err != nil {
 		log.Fatalf("Configuration error: %v", err)
 	}
+
 	if verbose {
 		logConfiguration()
 	}
@@ -100,9 +107,11 @@ func loadAndValidateConfig() error {
 		}
 		log.Warn("No config file found! Using flags and environment variables")
 	}
+
 	if err := validateConfigSchema(); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
+
 	if err := viper.Unmarshal(&config); err != nil {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
@@ -117,12 +126,15 @@ func validateConfigSchema() error {
 		log.Debug("No config_schema.json found, skipping schema validation")
 		return nil
 	}
+
 	schemaLoader := gojsonschema.NewStringLoader(string(schemaFile))
 	documentLoader := gojsonschema.NewGoLoader(viper.AllSettings())
+
 	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
 	if err != nil {
 		return fmt.Errorf("schema validation error: %w", err)
 	}
+
 	if !result.Valid() {
 		var errors []string
 		for _, desc := range result.Errors() {

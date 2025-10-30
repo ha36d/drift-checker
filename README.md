@@ -3,16 +3,14 @@
 A CLI tool for drift detection and destructive-change gating in Terraform/OpenTofu plans.
 
 ## Features
-
 - Detects drift using **refresh-only** plans (OpenTofu preferred, Terraform fallback)
 - Parses plan JSON and counts **updates / deletes / replaces**
-- Outputs **Markdown** (default) or **text** summary (counts + drifted resources)
-- Flags: `--path` (default `.`), `--format md|text` (default `md`), `--strict` (exit code 2 if drift detected)
+- Outputs **Markdown** (default), **text**, or **json** summary (counts + drifted resources)
+- Flags: `--path` (default `.`), `--format md|text|json` (default `md`), `--strict` (exit code 2 if drift detected)
 - Works with only Terraform **or** only OpenTofu installed
 - CI-ready with strict exit codes
 
 ## Quickstart
-
 ```bash
 # In your IaC directory
 tofu init || terraform init
@@ -22,7 +20,22 @@ drift-checker scan --path . --strict
 
 # Plain text output
 drift-checker scan --path . --format text
+
+# Machine-readable JSON output (stdout is **only** the JSON)
+drift-checker scan --path . --format json
 ````
+
+### JSON schema (output on stdout)
+
+```json
+{
+  "updates":  0,
+  "replaces": 0,
+  "deletes":  0,
+  "drifted":  ["module.vpc.aws_subnet.public[0]"],
+  "total":    1
+}
+```
 
 ### What counts as drift?
 
@@ -48,6 +61,7 @@ Any of the above increments drift counts and lists the resource address.
   1. `<runner> plan -refresh-only -out=drift-checker.plan`
   2. `<runner> show -json drift-checker.plan`
 * No dependency on streaming `plan -json` support.
+* All logs are written to **stderr**; **stdout** is reserved for the report (Markdown/Text/JSON).
 
 ## Project Structure
 
@@ -60,18 +74,18 @@ Any of the above increments drift counts and lists the resource address.
 
 Apache-2.0
 
-```
-
 ---
 
-### Notes / Next steps (already unblocked for you)
+### Notes / Next steps
 
-1. **CLI wiring** is complete: `--path`, `--format`, `--strict` work, exit code `2` on drift when strict.
-2. **Plan parsing** counts updates/deletes/replaces and lists resource addresses.
-3. Future hardening:
-   - Add unit tests with `testdata/*.json` plans.
-   - Consider supporting streaming `plan -json` when available (optional optimization).
-   - Optionally include counts per module/type.
+1. Add unit tests with `testdata/*.json` plans.
+2. Optionally support streaming `plan -json` when available.
+3. Consider per-module/type breakdowns.
 
-If you want, I can add tests + sample plan fixtures next.
+```
+
+**Notes on behavior**
+- `--format json` prints **only** the JSON object to stdout.
+- All logs (info/warn/error) are explicitly sent to **stderr** via `log.SetOutput(os.Stderr)` in `cmd/root.go`.
+- JSON fields: `updates`, `replaces`, `deletes`, `drifted` (list of resource addresses), `total` (length of `drifted`). Matches the semantics of Markdown/Text modes’ “Total changed resources”.
 ```

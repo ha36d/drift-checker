@@ -34,7 +34,8 @@ Exit status:
   1 = other error`,
 	Example: `  drift-checker scan
   drift-checker scan --path . --format md --strict
-  drift-checker scan --timeout 30m`,
+  drift-checker scan --timeout 30m
+  drift-checker scan --format json`,
 	RunE: runScan,
 }
 
@@ -44,7 +45,7 @@ func init() {
 	scanCmd.Flags().DurationVar(&timeout, "timeout", 2*time.Hour, "timeout for the scan operation")
 	scanCmd.Flags().BoolVar(&forceUpdate, "force", false, "deprecated: no-op (kept for compatibility)")
 	scanCmd.Flags().StringVar(&pathFlag, "path", ".", "working directory containing the Terraform/OpenTofu configuration")
-	scanCmd.Flags().StringVar(&formatFlag, "format", "md", "output format: md|text")
+	scanCmd.Flags().StringVar(&formatFlag, "format", "md", "output format: md|text|json")
 	scanCmd.Flags().BoolVar(&strictFlag, "strict", false, "exit with code 2 if drift is detected")
 }
 
@@ -81,7 +82,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("scan failed: %w", err)
 	}
 
-	// Print report
+	// Print report (stdout). All other logs go to stderr.
 	fmt.Println(res.RenderedReport)
 
 	// Strict mode: exit 2 if drift
